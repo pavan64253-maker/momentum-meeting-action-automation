@@ -1,0 +1,415 @@
+{
+ "name": "Meeting Notes to Action Items",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "meeting-actions",
+    "responseMode": "responseNode",
+    "options": {
+     "allowedOrigins": "*"
+    }
+   },
+   "name": "Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    200
+   ],
+   "webhookId": "meeting-actions-1"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "httpHeaderAuth",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "content-type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "{\"systemInstruction\":{\"parts\":[{\"text\":\"You extract action items from meeting notes. Return ONLY valid JSON in this shape: {\\\"summary\\\":\\\"3-4 sentence summary\\\",\\\"decisions\\\":[\\\"...\\\"],\\\"tasks\\\":[{\\\"task\\\":\\\"...\\\",\\\"owner\\\":\\\"name or Unassigned\\\",\\\"deadline\\\":\\\"YYYY-MM-DD or TBD\\\",\\\"priority\\\":\\\"High|Medium|Low\\\"}]}\"}]},\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\"={{ $json.body.transcript }}\"}]}],\"generationConfig\":{\"responseMimeType\":\"application/json\",\"maxOutputTokens\":1500}}",
+    "options": {
+     "timeout": 30000
+    },
+    "retryOnFail": false
+   },
+   "name": "AI Extract (Gemini)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    240,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const raw = $input.first().json.candidates[0].content.parts[0].text.replace(/```json|```/g,'').trim();\nconst d = JSON.parse(raw);\nconst wh = $('Webhook').first().json.body;\nreturn [{json:{...d, email: wh.email || '', meeting: wh.meeting || 'Meeting', date: new Date().toISOString().slice(0,10)}}];"
+   },
+   "name": "Parse JSON",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    480,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "allIncomingItems",
+    "options": {}
+   },
+   "name": "Respond to Frontend",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    720,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const d = $input.first().json;\nreturn d.tasks.map(t => ({json:{Date:d.date, Meeting:d.meeting, Task:t.task, Owner:t.owner, Deadline:t.deadline, Priority:t.priority, Status:'Open', Email:d.email || ''}}));"
+   },
+   "name": "Split Tasks",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    720,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "append",
+    "documentId": {
+     "__rl": true,
+     "mode": "id",
+     "value": "PASTE_SHEET_ID"
+    },
+    "sheetName": {
+     "__rl": true,
+     "mode": "name",
+     "value": "Sheet1"
+    },
+    "columns": {
+     "mappingMode": "autoMapInputData",
+     "value": {}
+    },
+    "options": {}
+   },
+   "name": "Save to Google Sheet",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.5,
+   "position": [
+    960,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "sendTo": "={{ $json.email }}",
+    "subject": "={{ $json.meeting }} - action items",
+    "message": "={{ '<h3>' + $json.meeting + ' - recap</h3><p>' + $json.summary + '</p><h4>Action items</h4><ul>' + $json.tasks.map(t => '<li><b>' + t.owner + '</b>: ' + t.task + ' (due ' + t.deadline + ', ' + t.priority + ')</li>').join('') + '</ul>' }}",
+    "options": {}
+   },
+   "name": "Send Recap Email",
+   "type": "n8n-nodes-base.gmail",
+   "typeVersion": 2.1,
+   "position": [
+    720,
+    340
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const item = $input.first();\nreturn item.json.email ? [item] : [];"
+   },
+   "name": "Only If Recap Email Provided",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    720,
+    480
+   ]
+  },
+  {
+   "parameters": {
+    "httpMethod": "GET",
+    "path": "meeting-tasks",
+    "responseMode": "responseNode",
+    "options": {
+     "allowedOrigins": "*"
+    }
+   },
+   "name": "Task List Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    620
+   ],
+   "webhookId": "meeting-tasks-1"
+  },
+  {
+   "parameters": {
+    "operation": "read",
+    "documentId": {
+     "__rl": true,
+     "mode": "id",
+     "value": "PASTE_SHEET_ID"
+    },
+    "sheetName": {
+     "__rl": true,
+     "mode": "name",
+     "value": "Sheet1"
+    },
+    "options": {}
+   },
+   "name": "Read Tasks",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.5,
+   "position": [
+    240,
+    620
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const rows = $input.all().map(item => item.json);\nconst today = new Date().toISOString().slice(0, 10);\nconst tasks = rows.map((row, index) => {\n  const deadline = row.Deadline || row.deadline || 'TBD';\n  const rawStatus = row.Status || row.status || 'Open';\n  const status = rawStatus === 'Open' ? 'Pending' : rawStatus;\n  const deadlineTime = Date.parse(deadline);\n  return {task: row.Task || row.task || '', owner: row.Owner || row.owner || 'Unassigned', deadline, priority: row.Priority || row.priority || 'Medium', status, meeting: row.Meeting || row.meeting || '', date: row.Date || row.date || '', email: row.Email || row.email || '', row_number: index + 2, overdue: status !== 'Completed' && Number.isFinite(deadlineTime) && deadlineTime < Date.now(), reminderNote: 'Daily reminders active'};\n}).filter(task => task.task);\nconst counts = {all: tasks.length, pending: tasks.filter(t => t.status === 'Pending').length, inProgress: tasks.filter(t => t.status === 'In Progress').length, completed: tasks.filter(t => t.status === 'Completed').length, overdue: tasks.filter(t => t.overdue).length};\nreturn [{json:{today, tasks, counts}}];"
+   },
+   "name": "Format Task List",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    480,
+    620
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "allIncomingItems",
+    "options": {}
+   },
+   "name": "Respond Task List",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    720,
+    620
+   ]
+  },
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "days",
+       "daysInterval": 1,
+       "triggerAtHour": 9
+      }
+     ]
+    }
+   },
+   "name": "Daily Reminder Schedule",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    900
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "read",
+    "documentId": {
+     "__rl": true,
+     "mode": "id",
+     "value": "PASTE_SHEET_ID"
+    },
+    "sheetName": {
+     "__rl": true,
+     "mode": "name",
+     "value": "Sheet1"
+    },
+    "options": {}
+   },
+   "name": "Read Reminder Tasks",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.5,
+   "position": [
+    240,
+    900
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const today = new Date();\nreturn $input.all().filter(item => {\n  const row = item.json;\n  const status = row.Status || row.status || 'Open';\n  const email = row.Email || row.email || '';\n  const deadline = Date.parse(row.Deadline || row.deadline || '');\n  return email && status !== 'Completed' && Number.isFinite(deadline) && deadline <= today.getTime() + 86400000;\n}).map(item => ({json: {...item.json, ownerEmail: item.json.Email || item.json.email, task: item.json.Task || item.json.task, deadline: item.json.Deadline || item.json.deadline, owner: item.json.Owner || item.json.owner || 'there'}}));"
+   },
+   "name": "Find Tasks Due for Reminder",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    480,
+    900
+   ]
+  },
+  {
+   "parameters": {
+    "sendTo": "={{ $json.ownerEmail }}",
+    "subject": "Reminder: {{ $json.task }}",
+    "message": "={{ '<p>Hi ' + $json.owner + ',</p><p>This is a reminder for your action item:</p><p><b>' + $json.task + '</b></p><p>Deadline: ' + $json.deadline + '</p><p>Please update the task status in the tracker.</p>' }}",
+    "options": {}
+   },
+   "name": "Send Owner Reminder",
+   "type": "n8n-nodes-base.gmail",
+   "typeVersion": 2.1,
+   "position": [
+    720,
+    900
+   ]
+  }
+ ],
+ "connections": {
+  "Webhook": {
+   "main": [
+    [
+     {
+      "node": "AI Extract (Gemini)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "AI Extract (Gemini)": {
+   "main": [
+    [
+     {
+      "node": "Parse JSON",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse JSON": {
+   "main": [
+    [
+     {
+      "node": "Respond to Frontend",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Split Tasks",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Only If Recap Email Provided",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Split Tasks": {
+   "main": [
+    [
+     {
+      "node": "Save to Google Sheet",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Only If Recap Email Provided": {
+   "main": [
+    [
+     {
+      "node": "Send Recap Email",
+      "type": "main",
+      "index": 0
+     }
+    ]
+    ]
+   },
+  "Task List Webhook": {
+   "main": [
+   [
+    {
+     "node": "Read Tasks",
+     "type": "main",
+     "index": 0
+    }
+   ]
+   ]
+  },
+  "Read Tasks": {
+   "main": [
+   [
+    {
+     "node": "Format Task List",
+     "type": "main",
+     "index": 0
+    }
+   ]
+   ]
+  },
+  "Format Task List": {
+   "main": [
+   [
+    {
+     "node": "Respond Task List",
+     "type": "main",
+     "index": 0
+    }
+   ]
+   ]
+  },
+  "Daily Reminder Schedule": {
+   "main": [
+   [
+    {
+     "node": "Read Reminder Tasks",
+     "type": "main",
+     "index": 0
+    }
+   ]
+   ]
+  },
+  "Read Reminder Tasks": {
+   "main": [
+   [
+    {
+     "node": "Find Tasks Due for Reminder",
+     "type": "main",
+     "index": 0
+    }
+   ]
+   ]
+  },
+  "Find Tasks Due for Reminder": {
+   "main": [
+   [
+    {
+     "node": "Send Owner Reminder",
+     "type": "main",
+     "index": 0
+    }
+   ]
+   ]
+  }
+ },
+ "settings": {}
+}

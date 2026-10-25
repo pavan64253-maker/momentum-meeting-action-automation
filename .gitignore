@@ -1,0 +1,26 @@
+# Environment and secret files
+.env
+.env.*
+!.env.example
+*.secret
+*Secrets.json
+credentials.json
+service-account*.json
+
+# n8n local data and exported runtime state
+.n8n/
+n8n_data/
+.qodo/
+*.sqlite
+*.sqlite-journal
+
+# Logs and local tooling output
+*.log
+logs/
+.vscode/settings.json
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
